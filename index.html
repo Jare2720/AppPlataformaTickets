@@ -4,110 +4,237 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gestión de Tickets</title>
-
-  <!-- Bootstrap -->
+  <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
   <!-- FontAwesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <!-- SweetAlert2 -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
   <!-- jsPDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
   <style>
-    body {
-      background: #f8f9fa;
-      padding: 2rem;
-    }
-    .card-ticket {
-      margin-bottom: 1rem;
-    }
+    body { padding: 20px; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1 class="mb-4 text-center">Gestión de Tickets</h1>
-
-    <!-- Formulario -->
-    <div class="mb-4">
-      <input id="titulo" class="form-control mb-2" placeholder="Título del Ticket">
-      <textarea id="descripcion" class="form-control mb-2" placeholder="Descripción"></textarea>
-      <select id="prioridad" class="form-select mb-2">
-        <option value="">Prioridad</option>
-        <option value="Alta">Alta</option>
-        <option value="Media">Media</option>
-        <option value="Baja">Baja</option>
-      </select>
-      <select id="tipo" class="form-select mb-2">
-        <option value="">Tipo de Pedido</option>
-        <option value="Empaque">Empaque</option>
-        <option value="Etiqueta">Etiqueta</option>
-        <option value="Transporte">Transporte</option>
-      </select>
-      <button class="btn btn-primary w-100" onclick="crearTicket()">Crear Ticket</button>
+    <h1 class="text-center">Gestión de Tickets</h1>
+    <div id="authSection">
+      <div id="loginForm" class="mb-3">
+        <h4>Iniciar Sesión</h4>
+        <input type="email" id="loginEmail" class="form-control mb-2" placeholder="Email">
+        <input type="password" id="loginPassword" class="form-control mb-2" placeholder="Contraseña">
+        <button class="btn btn-primary" onclick="login()">Entrar</button>
+        <button class="btn btn-link" onclick="toggleRegister(true)">Registrarse</button>
+        <button class="btn btn-link" onclick="resetPassword()">¿Olvidaste tu contraseña?</button>
+      </div>
+      <div id="registerForm" class="mb-3 hidden">
+        <h4>Registrarse</h4>
+        <input type="email" id="registerEmail" class="form-control mb-2" placeholder="Email">
+        <input type="password" id="registerPassword" class="form-control mb-2" placeholder="Contraseña">
+        <button class="btn btn-success" onclick="register()">Crear cuenta</button>
+        <button class="btn btn-link" onclick="toggleRegister(false)">¿Ya tienes cuenta?</button>
+      </div>
     </div>
 
-    <!-- Lista de Tickets -->
-    <div id="listaTickets"></div>
+    <div id="dashboard" class="hidden">
+      <div class="d-flex justify-content-between mb-3">
+        <h3 id="welcomeUser"></h3>
+        <button class="btn btn-danger" onclick="logout()">Cerrar sesión</button>
+      </div>
+
+      <div class="mb-3">
+        <button class="btn btn-primary" onclick="showTicketForm()"><i class="fas fa-plus"></i> Crear Ticket</button>
+        <button class="btn btn-success" onclick="exportTicketsCSV()"><i class="fas fa-file-csv"></i> Exportar CSV</button>
+      </div>
+
+      <canvas id="priorityChart" height="100"></canvas>
+
+      <div id="ticketForm" class="card p-3 mt-3 hidden">
+        <h5>Nuevo Ticket</h5>
+        <input id="ticketTitle" class="form-control mb-2" placeholder="Título">
+        <textarea id="ticketDescription" class="form-control mb-2" placeholder="Descripción"></textarea>
+        <select id="ticketPriority" class="form-control mb-2">
+          <option value="alta">Alta</option>
+          <option value="media">Media</option>
+          <option value="baja">Baja</option>
+        </select>
+        <input id="ticketType" class="form-control mb-2" placeholder="Tipo de Pedido">
+        <button class="btn btn-primary" onclick="createTicket()">Guardar Ticket</button>
+      </div>
+
+      <div id="ticketList" class="row mt-4"></div>
+    </div>
   </div>
 
-  <script>
-    let folio = 1;
-    const lista = document.getElementById("listaTickets");
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+    import { getFirestore, collection, addDoc, getDocs, query, where, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
-    function crearTicket() {
-      const titulo = document.getElementById("titulo").value.trim();
-      const descripcion = document.getElementById("descripcion").value.trim();
-      const prioridad = document.getElementById("prioridad").value;
-      const tipo = document.getElementById("tipo").value;
+    const firebaseConfig = {
+      apiKey: "AIzaSyDaLGTKTJ4l716_WNi84etNAozG9wp69M8",
+      authDomain: "plataformaproqro.firebaseapp.com",
+      projectId: "plataformaproqro",
+      storageBucket: "plataformaproqro.appspot.com",
+      messagingSenderId: "143130694419",
+      appId: "1:143130694419:web:dd0465044ee881fdc5c0e6"
+    };
 
-      if (!titulo || !descripcion || !prioridad || !tipo) {
-        Swal.fire("Completa todos los campos");
-        return;
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth();
+    const db = getFirestore();
+
+    window.toggleRegister = (show) => {
+      document.getElementById('loginForm').classList.toggle('hidden', show);
+      document.getElementById('registerForm').classList.toggle('hidden', !show);
+    };
+
+    window.register = async () => {
+      const email = document.getElementById("registerEmail").value;
+      const password = document.getElementById("registerPassword").value;
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+        Swal.fire("Registrado", "Cuenta creada exitosamente", "success");
+      } catch (err) {
+        Swal.fire("Error", err.message, "error");
       }
+    };
 
-      const fecha = new Date().toLocaleString();
-      const folioTicket = `TKT-${folio.toString().padStart(4, '0')}`;
-      folio++;
+    window.login = async () => {
+      const email = document.getElementById("loginEmail").value;
+      const password = document.getElementById("loginPassword").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (err) {
+        Swal.fire("Error", err.message, "error");
+      }
+    };
 
-      const ticketHTML = `
-        <div class="card card-ticket">
-          <div class="card-body">
-            <h5 class="card-title">${titulo} <span class="badge bg-secondary">${folioTicket}</span></h5>
-            <p class="card-text">${descripcion}</p>
-            <p class="card-text"><strong>Prioridad:</strong> ${prioridad} | <strong>Tipo:</strong> ${tipo}</p>
-            <p class="card-text"><small class="text-muted">${fecha}</small></p>
-            <button class="btn btn-sm btn-outline-danger" onclick='exportarPDF("${folioTicket}", "${titulo}", "${descripcion}", "${prioridad}", "${tipo}", "${fecha}")'>Exportar PDF</button>
+    window.logout = () => {
+      signOut(auth);
+    };
+
+    window.resetPassword = async () => {
+      const email = prompt("Ingresa tu correo para recuperar contraseña:");
+      if (email) {
+        try {
+          await sendPasswordResetEmail(auth, email);
+          Swal.fire("Enviado", "Revisa tu correo para instrucciones", "info");
+        } catch (err) {
+          Swal.fire("Error", err.message, "error");
+        }
+      }
+    };
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        document.getElementById("authSection").classList.add("hidden");
+        document.getElementById("dashboard").classList.remove("hidden");
+        document.getElementById("welcomeUser").textContent = `Hola, ${user.email}`;
+        loadTickets();
+      } else {
+        document.getElementById("authSection").classList.remove("hidden");
+        document.getElementById("dashboard").classList.add("hidden");
+      }
+    });
+
+    window.showTicketForm = () => {
+      document.getElementById("ticketForm").classList.toggle("hidden");
+    };
+
+    window.createTicket = async () => {
+      const title = document.getElementById("ticketTitle").value;
+      const description = document.getElementById("ticketDescription").value;
+      const priority = document.getElementById("ticketPriority").value;
+      const type = document.getElementById("ticketType").value;
+      const folio = "FOLIO-" + Date.now();
+      const fecha = Timestamp.now();
+
+      try {
+        await addDoc(collection(db, "tickets"), { title, description, priority, type, folio, fecha });
+        Swal.fire("Guardado", "Ticket creado exitosamente", "success");
+        loadTickets();
+        document.getElementById("ticketForm").classList.add("hidden");
+      } catch (err) {
+        Swal.fire("Error", err.message, "error");
+      }
+    };
+
+    window.loadTickets = async () => {
+      const q = query(collection(db, "tickets"));
+      const querySnapshot = await getDocs(q);
+      const list = document.getElementById("ticketList");
+      list.innerHTML = "";
+      const counts = { alta: 0, media: 0, baja: 0 };
+
+      querySnapshot.forEach(doc => {
+        const d = doc.data();
+        counts[d.priority]++;
+        list.innerHTML += `
+          <div class="col-md-4">
+            <div class="card mb-3">
+              <div class="card-body">
+                <h5 class="card-title">${d.title}</h5>
+                <p class="card-text">${d.description}</p>
+                <p class="card-text"><span class="badge bg-${d.priority === 'alta' ? 'danger' : d.priority === 'media' ? 'warning' : 'success'}">${d.priority}</span></p>
+                <p><strong>Folio:</strong> ${d.folio}</p>
+                <p><strong>Tipo:</strong> ${d.type}</p>
+                <button class="btn btn-outline-secondary" onclick='exportPDF(${JSON.stringify(d)})'><i class="fas fa-file-pdf"></i> Exportar PDF</button>
+              </div>
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      });
 
-      lista.insertAdjacentHTML("afterbegin", ticketHTML);
+      renderChart(counts);
+    };
 
-      // Limpiar campos
-      document.getElementById("titulo").value = "";
-      document.getElementById("descripcion").value = "";
-      document.getElementById("prioridad").value = "";
-      document.getElementById("tipo").value = "";
-    }
+    window.renderChart = (counts) => {
+      new Chart(document.getElementById("priorityChart"), {
+        type: "bar",
+        data: {
+          labels: ["Alta", "Media", "Baja"],
+          datasets: [{
+            label: "Prioridad",
+            data: [counts.alta, counts.media, counts.baja],
+            backgroundColor: ["#dc3545", "#ffc107", "#198754"]
+          }]
+        }
+      });
+    };
 
-    function exportarPDF(folio, titulo, descripcion, prioridad, tipo, fecha) {
+    window.exportTicketsCSV = async () => {
+      const q = query(collection(db, "tickets"));
+      const querySnapshot = await getDocs(q);
+      let csv = "Folio,Título,Descripción,Prioridad,Tipo\n";
+      querySnapshot.forEach(doc => {
+        const d = doc.data();
+        csv += `${d.folio},"${d.title}","${d.description}",${d.priority},${d.type}\n`;
+      });
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "tickets.csv";
+      a.click();
+    };
+
+    window.exportPDF = (ticket) => {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
-      doc.text("Ticket: " + folio, 10, 10);
-      doc.text("Título: " + titulo, 10, 20);
-      doc.text("Descripción: " + descripcion, 10, 30);
-      doc.text("Prioridad: " + prioridad, 10, 40);
-      doc.text("Tipo de pedido: " + tipo, 10, 50);
-      doc.text("Fecha de creación: " + fecha, 10, 60);
-      doc.save(`${folio}.pdf`);
-    }
+      doc.text("Ticket de Pedido", 10, 10);
+      doc.text(`Folio: ${ticket.folio}`, 10, 20);
+      doc.text(`Título: ${ticket.title}`, 10, 30);
+      doc.text(`Descripción: ${ticket.description}`, 10, 40);
+      doc.text(`Prioridad: ${ticket.priority}`, 10, 50);
+      doc.text(`Tipo de Pedido: ${ticket.type}`, 10, 60);
+      doc.save(`${ticket.folio}.pdf`);
+    };
   </script>
 </body>
 </html>
